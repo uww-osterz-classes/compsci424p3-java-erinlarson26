@@ -30,279 +30,242 @@ import java.util.concurrent.Semaphore;
  * comment to be more helpful.
  */
 public class Program3 {
-	private static int numResources;
-	private static int numProcesses;
-	private static int[][] max;
-	private static int[][] allocation;
-	private static int[] available;
-	private static Semaphore mutex;
+	private int numResources;
+    private int numProcesses;
+    private int[][] max;
+    private int[][] allocation;
+    private int[] available;
+    private Semaphore mutex;
 
-	public static void main(String[] args) {
-		if (args.length < 2) {
-			System.err.println("Not enough command-line arguments provided, exiting.");
-			return;
-		}
+    public static void main(String[] args) {
+        if (args.length < 2) {
+            System.err.println("Not enough command-line arguments provided, exiting.");
+            return;
+        }
 
-		String mode = args[0];
-		String setupFilePath = args[1];
+        String mode = args[0];
+        String setupFilePath = args[1];
 
-		System.out.println("Selected mode: " + args[0]);
-		System.out.println("Setup file location: " + args[1]);
+        Program3 bankersAlgorithm = new Program3();
+        bankersAlgorithm.run(mode, setupFilePath);
+    }
 
-		try {
-			readSetupFile(setupFilePath);
-		} catch (IOException e) {
-			System.err.println("Error while reading setup file: " + e.getMessage());
-			return;
-		}
+    public void run(String mode, String setupFilePath) {
+        try {
+            readSetupFile(setupFilePath);
+        } catch (IOException e) {
+            System.err.println("Error while reading setup file: " + e.getMessage());
+            return;
+        }
 
-		if (!checkInitialConditions()) {
-			System.err.println("System does not start in a safe state.");
-			return;
-		}
+        if (!checkInitialConditions()) {
+            System.err.println("System does not start in a safe state.");
+            return;
+        }
 
-		if (mode.equals("manual")) {
-			manualMode();
-		} else if (mode.equals("auto")) {
-			autoMode();
-		} else {
-			System.err.println("Invalid mode: " + mode + ". Exiting.");
-		}
-	}
+        mutex = new Semaphore(1);
 
-	private static void readSetupFile(String setupFilePath) throws IOException {
-		BufferedReader setupFileReader = new BufferedReader(new FileReader(setupFilePath));
+        if (mode.equals("manual")) {
+            manualMode();
+        } else if (mode.equals("auto")) {
+            autoMode();
+        } else {
+            System.err.println("Invalid mode: " + mode + ". Exiting.");
+        }
+    }
 
-		String currentLine;
+    private void readSetupFile(String setupFilePath) throws IOException {
+        BufferedReader setupFileReader = new BufferedReader(new FileReader(setupFilePath));
 
-		currentLine = setupFileReader.readLine();
-		numResources = Integer.parseInt(currentLine.split(" ")[0]);
+        // Read number of resources and processes
+        numResources = Integer.parseInt(setupFileReader.readLine().split(" ")[0]);
+        numProcesses = Integer.parseInt(setupFileReader.readLine().split(" ")[0]);
 
-		currentLine = setupFileReader.readLine();
-		numProcesses = Integer.parseInt(currentLine.split(" ")[0]);
+        // Initialize arrays
+        available = new int[numResources];
+        max = new int[numProcesses][numResources];
+        allocation = new int[numProcesses][numResources];
 
-		available = new int[numResources];
-		max = new int[numProcesses][numResources];
-		allocation = new int[numProcesses][numResources];
-		mutex = new Semaphore(1);
+        // Read and process "Available" section
+        setupFileReader.readLine(); // Skip "Available" line
+        String[] availableValues = setupFileReader.readLine().split(" ");
+        for (int i = 0; i < numResources; i++) {
+            available[i] = Integer.parseInt(availableValues[i]);
+        }
 
-		// Read and process the "Available" section
-		setupFileReader.readLine(); // Skip the "Available" line
-		currentLine = setupFileReader.readLine();
-		String[] availableValues = currentLine.split(" ");
-		for (int i = 0; i < numResources; i++) {
-			available[i] = Integer.parseInt(availableValues[i]);
-		}
+        // Read and process "Max" section
+        setupFileReader.readLine(); // Skip "Max" line
+        for (int i = 0; i < numProcesses; i++) {
+            String[] maxValues = setupFileReader.readLine().split(" ");
+            for (int j = 0; j < numResources; j++) {
+                max[i][j] = Integer.parseInt(maxValues[j]);
+            }
+        }
 
-		// Read and process the "Max" section
-		setupFileReader.readLine(); // Skip the "Max" line
-		for (int i = 0; i < numProcesses; i++) {
-			currentLine = setupFileReader.readLine();
-			String[] maxValues = currentLine.split(" ");
-			for (int j = 0; j < numResources; j++) {
-				max[i][j] = Integer.parseInt(maxValues[j]);
-			}
-		}
+        // Read and process "Allocation" section
+        setupFileReader.readLine(); // Skip "Allocation" line
+        for (int i = 0; i < numProcesses; i++) {
+            String[] allocationValues = setupFileReader.readLine().split(" ");
+            for (int j = 0; j < numResources; j++) {
+                allocation[i][j] = Integer.parseInt(allocationValues[j]);
+            }
+        }
 
-		// Read and process the "Allocation" section
-		setupFileReader.readLine(); // Skip the "Allocation" line
-		for (int i = 0; i < numProcesses; i++) {
-			currentLine = setupFileReader.readLine();
-			String[] allocationValues = currentLine.split(" ");
-			for (int j = 0; j < numResources; j++) {
-				allocation[i][j] = Integer.parseInt(allocationValues[j]);
-			}
-		}
+        setupFileReader.close();
+    }
 
-		setupFileReader.close();
-	}
-
-	private static boolean checkInitialConditions() {
-		// Check if allocation is less than or equal to max
-		for (int i = 0; i < numProcesses; i++) {
-			for (int j = 0; j < numResources; j++) {
-				if (allocation[i][j] > max[i][j]) {
-					return false;
-				}
-			}
-		}
-		return true;
-	}
-
-	private static void manualMode() {
-		try (Scanner scanner = new Scanner(System.in)) {
-			while (true) {
-				System.out.println("Enter command(request, release, end): ");
-				String command = scanner.nextLine();
-				if (command.equals("end")) {
-					break;
-				} else if (command.startsWith("request")) {
-					handleManualRequest(command);
-				} else if (command.startsWith("release")) {
-					handleManualRelease(command);
-				} else {
-					System.out.println("Invalid command.");
-				}
-			}
-		}
-	}
-
-	private static void handleManualRequest(String command) {
-		String[] parts = command.split(" ");
-		int processId = Integer.parseInt(parts[1]);
-		int[] request = new int[numResources];
-		for (int i = 0; i < numResources; i++) {
-			request[i] = Integer.parseInt(parts[i + 4]);
-		}
-		if (requestGranted(processId, request)) {
-			for (int i = 0; i < numResources; i++) {
-				allocation[processId][i] += request[i];
-				available[i] -= request[i];
-			}
-			System.out.println("Request granted");
-		} else {
-			System.out.println("Request denied");
-		}
-	}
-
-	private static boolean requestGranted(int processId, int[] request) {
-		int[] tempAvailable = Arrays.copyOf(available, available.length);
-        int[][] tempAllocation = new int[numProcesses][numResources];
-
-        // Simulate the allocation
+    private boolean checkInitialConditions() {
+        // Check if allocation is less than or equal to max
         for (int i = 0; i < numProcesses; i++) {
             for (int j = 0; j < numResources; j++) {
+                if (allocation[i][j] > max[i][j]) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    private void manualMode() {
+        try (Scanner scanner = new Scanner(System.in)) {
+            while (true) {
+                System.out.println("Enter command(request, release, end): ");
+                String command = scanner.nextLine();
+                if (command.equals("end")) {
+                    break;
+                } else if (command.startsWith("request")) {
+                    handleManualRequest(command);
+                } else if (command.startsWith("release")) {
+                    handleManualRelease(command);
+                } else {
+                    System.out.println("Invalid command.");
+                }
+            }
+        }
+    }
+
+    private void handleManualRequest(String command) {
+        String[] parts = command.split(" ");
+        int processId = Integer.parseInt(parts[1]);
+        int resourceType = Integer.parseInt(parts[3]);
+        int requestAmount = Integer.parseInt(parts[5]);
+        requestResource(processId, resourceType, requestAmount);
+    }
+
+    private void handleManualRelease(String command) {
+        String[] parts = command.split(" ");
+        int processId = Integer.parseInt(parts[1]);
+        int resourceType = Integer.parseInt(parts[3]);
+        int releaseAmount = Integer.parseInt(parts[5]);
+        releaseResource(processId, resourceType, releaseAmount);
+    }
+
+    private void requestResource(int processId, int resourceType, int requestAmount) {
+        try {
+            mutex.acquire();
+            if (isSafeToAllocate(processId, resourceType, requestAmount)) {
+                allocation[processId][resourceType] += requestAmount;
+                available[resourceType] -= requestAmount;
+                System.out.println("Request granted");
+            } else {
+                System.out.println("Request denied");
+            }
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        } finally {
+            mutex.release();
+        }
+    }
+
+    private void releaseResource(int processId, int resourceType, int releaseAmount) {
+        if (releaseAmount < 0 || releaseAmount > allocation[processId][resourceType]) {
+            System.out.println("Error: Invalid release request.");
+            return;
+        }
+
+        allocation[processId][resourceType] -= releaseAmount;
+        available[resourceType] += releaseAmount;
+        System.out.println("Resources released.");
+    }
+
+    private boolean isSafeToAllocate(int processId, int resourceType, int requestAmount) {
+        int[] work = Arrays.copyOf(available, available.length);
+        int[][] need = new int[numProcesses][numResources];
+        int[][] tempAllocation = new int[numProcesses][numResources];
+
+        for (int i = 0; i < numProcesses; i++) {
+            for (int j = 0; j < numResources; j++) {
+                need[i][j] = max[i][j] - allocation[i][j];
                 tempAllocation[i][j] = allocation[i][j];
             }
         }
 
-        for (int i = 0; i < numResources; i++) {
-            tempAvailable[i] -= request[i];
-            tempAllocation[processId][i] += request[i];
-        }
+        work[resourceType] -= requestAmount;
+        tempAllocation[processId][resourceType] += requestAmount;
 
-        boolean[] finished = new boolean[numProcesses];
-        Arrays.fill(finished, false);
+        boolean[] finish = new boolean[numProcesses];
+        Arrays.fill(finish, false);
 
-        // Simulate resource allocation until all processes finish or deadlock is detected
-        boolean deadlock = false;
         int count = 0;
-        while (count < numProcesses && !deadlock) {
-            boolean allocated = false;
+        while (count < numProcesses) {
+            boolean found = false;
             for (int i = 0; i < numProcesses; i++) {
-                if (!finished[i]) {
+                if (!finish[i]) {
                     boolean canAllocate = true;
                     for (int j = 0; j < numResources; j++) {
-                        if (tempAvailable[j] < max[i][j] - tempAllocation[i][j]) {
+                        if (need[i][j] > work[j]) {
                             canAllocate = false;
                             break;
                         }
                     }
                     if (canAllocate) {
-                        allocated = true;
-                        finished[i] = true;
-                        count++;
                         for (int j = 0; j < numResources; j++) {
-                            tempAvailable[j] += tempAllocation[i][j];
+                            work[j] += tempAllocation[i][j];
                         }
+                        finish[i] = true;
+                        count++;
+                        found = true;
                     }
                 }
             }
-            if (!allocated) {
-                deadlock = true;
+            if (!found) {
+                break;
             }
         }
 
-        return !deadlock;
+        return count == numProcesses;
     }
 
-	private static void handleManualRelease(String command) {
-		String[] parts = command.split(" ");
-		int processId = Integer.parseInt(parts[1]);
-		int[] release = new int[numResources];
-		for (int i = 0; i < numResources; i++) {
-			release[i] = Integer.parseInt(parts[i + 3]);
-		}
-		for (int i = 0; i < numResources; i++) {
-			if (release[i] < 0 || release[i] > allocation[processId][i]) {
-				System.out.println("Error: Invalid release request.");
-				return;
-			}
-		}
-		for (int i = 0; i < numResources; i++) {
-			allocation[processId][i] -= release[i];
-			available[i] += release[i];
-		}
-		System.out.println("Resources released.");
-	}
+    private void autoMode() {
+        Thread[] threads = new Thread[numProcesses];
+        for (int i = 0; i < numProcesses; i++) {
+            threads[i] = new Thread(new Process(i));
+            threads[i].start();
+        }
+        try {
+            for (Thread thread : threads) {
+                thread.join();
+            }
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+    }
 
-	private static void autoMode() {
-		Thread[] threads = new Thread[numProcesses];
-		for (int i = 0; i < numProcesses; i++) {
-			threads[i] = new Thread(new Process(i));
-			threads[i].start();
-		}
-		try {
-			for (Thread thread : threads) {
-				thread.join();
-			}
-		} catch (InterruptedException e) {
-			e.printStackTrace();
-		}
-	}
+    class Process implements Runnable {
+        private final int id;
 
-	static class Process implements Runnable {
-		private final int id;
-		private final Random random;
+        public Process(int id) {
+            this.id = id;
+        }
 
-		public Process(int id) {
-			this.id = id;
-			this.random = new Random();
-		}
-
-		@Override
-		public void run() {
-			for (int i = 0; i < 3; i++) { // Generating 3 requests and 3 releases
-				int[] request = generateRequest();
-				int[] release = generateRelease();
-
-				try {
-					mutex.acquire();
-					if (requestGranted(id, request)) {
-						for (int j = 0; j < numResources; j++) {
-							allocation[id][j] += request[j];
-							available[j] -= request[j];
-						}
-						System.out.println("Process " + id + " requests " + Arrays.toString(request) + ": granted");
-					} else {
-						System.out.println("Process " + id + " requests " + Arrays.toString(request) + ": denied");
-					}
-					for (int j = 0; j < numResources; j++) {
-						allocation[id][j] -= release[j];
-						available[j] += release[j];
-					}
-					System.out.println("Process " + id + " releases " + Arrays.toString(release));
-					mutex.release();
-				} catch (InterruptedException e) {
-					e.printStackTrace();
-				}
-			}
-		}
-
-		private int[] generateRequest() {
-			int[] request = new int[numResources];
-			for (int i = 0; i < numResources; i++) {
-				request[i] = random.nextInt(max[id][i] - allocation[id][i] + 1);
-			}
-			return request;
-		}
-
-		private int[] generateRelease() {
-			int[] release = new int[numResources];
-			for (int i = 0; i < numResources; i++) {
-				release[i] = random.nextInt(allocation[id][i] + 1);
-			}
-			return release;
-		}
-	}
+        public void run() {
+            Random random = new Random();
+            for (int i = 0; i < 3; i++) {
+                int resourceType = random.nextInt(numResources);
+                int requestAmount = random.nextInt(max[id][resourceType] - allocation[id][resourceType] + 1);
+                requestResource(id, resourceType, requestAmount);
+                releaseResource(id, resourceType, random.nextInt(allocation[id][resourceType] + 1));
+            }
+        }
+    }
 }
