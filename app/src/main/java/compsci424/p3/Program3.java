@@ -161,21 +161,23 @@ public class Program3 {
     }
 
     private void requestResource(int processId, int resourceType, int requestAmount) {
-        try {
-            mutex.acquire();
-            if (isSafeToAllocate(processId, resourceType, requestAmount)) {
-                allocation[processId][resourceType] += requestAmount;
-                available[resourceType] -= requestAmount;
-                System.out.println("Request granted");
-            } else {
-                System.out.println("Request denied");
-            }
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        } finally {
-            mutex.release();
-        }
-    }
+    	 try {
+    	        mutex.acquire();
+    	        if (requestAmount > available[resourceType]) {
+    	            System.out.println("Process " + processId + " requests " + requestAmount + " units of resource " + resourceType + ": denied");
+    	        } else if (isSafeToAllocate(processId, resourceType, requestAmount)) {
+    	            allocation[processId][resourceType] += requestAmount;
+    	            available[resourceType] -= requestAmount;
+    	            System.out.println("Process " + processId + " requests " + requestAmount + " units of resource " + resourceType + ": granted");
+    	        } else {
+    	            System.out.println("Process " + processId + " requests " + requestAmount + " units of resource " + resourceType + ": denied");
+    	        }
+    	    } catch (InterruptedException e) {
+    	        e.printStackTrace();
+    	    } finally {
+    	        mutex.release();
+    	    }
+    	}
 
     private void releaseResource(int processId, int resourceType, int releaseAmount) {
         if (releaseAmount < 0 || releaseAmount > allocation[processId][resourceType]) {
@@ -185,7 +187,7 @@ public class Program3 {
 
         allocation[processId][resourceType] -= releaseAmount;
         available[resourceType] += releaseAmount;
-        System.out.println("Resources released.");
+        System.out.println("Process " + processId + " releases " + releaseAmount + " units of resource " + resourceType);
     }
 
     private boolean isSafeToAllocate(int processId, int resourceType, int requestAmount) {
@@ -233,7 +235,7 @@ public class Program3 {
             }
         }
 
-        return count == numProcesses;
+        return count == numProcesses && finish[processId]; //adding && finish[processId]
     }
 
     private void autoMode() {
